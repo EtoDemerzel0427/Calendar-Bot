@@ -23,7 +23,20 @@ because the requirements.txt is auto-generated in my Conda environment, and I am
 5. Run `python main.py` to start the bot. You can also use `nohup python main.py &` to run it in the background. Hosting it on a server is also an option.
 6. Talk to the bot in your discord server. The bot will respond to the following commands:
 ```
+!help
 !new_event
 !revise_event
 !delete_event
 ```
+
+An example of the `!revise_event` command is shown below:
+![example](./assets/use-case.png)
+
+With this command successfully executed, the bot will update the HTML file on GitHub and the changes will be reflected on the website:
+
+![website](./assets/updated.png)
+
+## How it works
+
+The bot is implemented using the [discord.py](https://discordpy.readthedocs.io/en/latest/) library to send and receive message from the discord server, and the [PyGithub](https://pygithub.readthedocs.io/en/latest/) library to update the file on GitHub. 
+[BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/bs4/doc/) is used to parse the HTML file and update the `<div>`s. 
