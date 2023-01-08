@@ -114,7 +114,7 @@ async def new_event(ctx):
 
         # update the file
         new_contents_bytes = new_contents.encode('utf-8')
-        repo.update_file('events.html', f'Update events for {today}', new_contents_bytes, file_contents.sha,
+        repo.update_file('events.html', f'[Calendar Bot]: Update events for {today}', new_contents_bytes, file_contents.sha,
                          branch='master')
         await ctx.send('Successfully added events for the date!')
 
@@ -170,7 +170,7 @@ async def revise_event(ctx):
 
                 # update the file
                 new_contents_bytes = new_contents.encode('utf-8')
-                repo.update_file('events.html', f'Revise events for {date}', new_contents_bytes, file_contents.sha,
+                repo.update_file('events.html', f'[Calendar Bot]: Revise events for {date}', new_contents_bytes, file_contents.sha,
                                  branch='master')
                 await ctx.send('Successfully added events for the date!')
                 return
@@ -196,7 +196,7 @@ async def revise_event(ctx):
 
                     # update the file
                     new_contents_bytes = new_contents.encode('utf-8')
-                    repo.update_file('events.html', f'Revise events for {date}', new_contents_bytes, file_contents.sha,
+                    repo.update_file('events.html', f'[Calendar Bot]: Revise events for {date}', new_contents_bytes, file_contents.sha,
                                      branch='master')
                     await ctx.send('Successfully revised events for the date!')
                 return
@@ -247,7 +247,7 @@ async def delete_event(ctx):
 
                 # update the file
                 new_contents_bytes = new_contents.encode('utf-8')
-                repo.update_file('events.html', f'Delete events for {date}', new_contents_bytes, file_contents.sha,
+                repo.update_file('events.html', f'[Calendar Bot]: Delete events for {date}', new_contents_bytes, file_contents.sha,
                                  branch='master')
                 await ctx.send('Successfully deleted events for the date!')
                 return
