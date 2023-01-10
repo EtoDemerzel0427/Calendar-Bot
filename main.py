@@ -8,6 +8,7 @@ from github import Github
 from datetime import datetime
 from bs4 import BeautifulSoup
 import logging
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 
@@ -101,7 +102,11 @@ async def add_event(ctx, event_date):
 
 @client.command()
 async def new_event(ctx):
-    today = datetime.today().strftime('%m/%d/%Y')
+    # get the time in the US/Central timezone
+    tz = pytz.timezone('US/Central')
+    now = datetime.now(tz)
+    today = now.strftime("%m/%d/%Y")
+    logging.info(f"initiated new_event by {ctx.author.name} at {now}")
 
     # Send the initial message and wait for a response
     await ctx.send('Sure. So what events do you want to add?')
@@ -171,9 +176,11 @@ async def revise_event(ctx):
                         if datetime.strptime(div['date'], '%m/%d/%Y') > datetime.strptime(date, '%m/%d/%Y'):
                             div.insert_before(BeautifulSoup(new_div, 'html.parser'))
                             inserted = True
+                            logging.info(f"inserted new div for {date}")
                             break
                     if not inserted:
                         all_divs[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
+                        logging.info(f"Latest: inserted new div for {date}")
                 new_contents = soup.prettify()
 
                 # update the file
