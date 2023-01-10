@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from github import Github
 from datetime import datetime
 from bs4 import BeautifulSoup
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 load_dotenv()
 github_token = os.getenv('GITHUB_TOKEN')
@@ -162,10 +165,15 @@ async def revise_event(ctx):
                 new_div = await add_event(ctx, date)
                 if new_div is not None:
                     # find the correct place to insert the new div
-                    for div in soup.find_all('div', attrs={'date': True, 'credit': True}):
+                    inserted = False
+                    all_divs = soup.find_all('div', attrs={'date': True, 'credit': True})
+                    for div in all_divs:
                         if datetime.strptime(div['date'], '%m/%d/%Y') > datetime.strptime(date, '%m/%d/%Y'):
                             div.insert_before(BeautifulSoup(new_div, 'html.parser'))
+                            inserted = True
                             break
+                    if not inserted:
+                        all_divs[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
                 new_contents = soup.prettify()
 
                 # update the file
