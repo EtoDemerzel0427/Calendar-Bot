@@ -279,5 +279,167 @@ async def delete_event(ctx):
         elif choice == 1:
             await ctx.send("Okay, I won't delete it. Bye!")
 
+# period format:
+# <div start="mm/dd/yyyy" end="mm/dd/yyyy" color="#{color-hex}">Period Description</div>
+# Note that we allow only a single sentence of description for a period.
+# Distinguish between ordinary periods and base periods. Base period format:
+# <div class="base" credit="xx" start="mm/dd/yyyy" end="mm/dd/yyyy" hue="xxx"><i>Period Description</i></div>
+async def add_period(ctx, start_date, end_date):
+    await ctx.send("Please enter the description of the period:")
+    response = await client.wait_for('message')
+
+    await ctx.send("Whether this period is a base period? (yes/no)")
+    base = await wait_for_options(ctx, ['yes', 'no'])
+
+    if base == 0:
+        await ctx.send("Please enter the credit of the period:")
+        rating = await wait_for_integer(ctx, (0, 100))
+
+        await ctx.send("Please enter the hue of the period:")
+        hue = await wait_for_integer(ctx, (0, 360))
+
+        return f'<div class="base" credit="{rating}" start="{start_date}" end="{end_date}" hue="{hue}"><i>{response.content}</i></div>'
+    elif base == 1:
+        await ctx.send("Please enter the color of the period (format: #{color-hex}):\n (You can use https://htmlcolorcodes.com/ to find a color)")
+        color = await wait_for_color(ctx)
+
+        return f'<div start="{start_date}" end="{end_date}" color="{color.content}">{response.content}</div>'
+
+@client.command()
+async def new_period(ctx):
+    await ctx.send("Please enter the start date of the period (format: mm/dd/yyyy):")
+    response = await wait_for_date(ctx)
+    start_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    await ctx.send("Please enter the end date of the period (format: mm/dd/yyyy):")
+    response = await wait_for_date(ctx)
+    end_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    while end_date < start_date:
+        await ctx.send("The end date must be after the start date. Please enter 1 to re-enter the start date, or 2 to re-enter the end date:")
+        response = await wait_for_options(ctx, ['1', '2'])
+
+        if response == 0:
+            await ctx.send("Please enter the start date of the period (format: mm/dd/yyyy):")
+            response = await wait_for_date(ctx)
+            start_date = datetime.strptime(response.content, '%m/%d/%Y')
+        elif response == 1:
+            await ctx.send("Please enter the end date of the period (format: mm/dd/yyyy):")
+            response = await wait_for_date(ctx)
+            end_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    start_date = start_date.strftime('%m/%d/%Y')
+    end_date = end_date.strftime('%m/%d/%Y')
+    # verify if it is an existing period
+    file_contents = repo.get_contents('events.html')
+    soup = BeautifulSoup(file_contents.decoded_content.decode('utf-8'), 'html.parser')
+    divs = soup.find_all('div', attrs={'start': start_date, 'end': end_date})
+
+    if len(divs) != 0:
+        # len(divs) should be exactly 1 in our case, because we never allow two same periods
+        await ctx.send(f"The following period was found:\n\n{divs[0]}\n Do you want to revise this period? (yes/no)")
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            await ctx.send("Okay, what do you want to change it to?")
+            new_div = await add_period(ctx, start_date, end_date)
+
+            await ctx.send(f"Okay, I will change it to:\n\n{new_div}\n Do you want to proceed? (yes/no)")
+            final_choice = await wait_for_options(ctx, ['yes', 'no'])
+            if final_choice == 0:
+                if new_div is not None:
+                    divs[0].replace_with(BeautifulSoup(new_div, 'html.parser'))
+                    new_contents = soup.prettify()
+
+                    # update the file
+                    new_contents_bytes = new_contents.encode('utf-8')
+                    repo.update_file('events.html', f'[Calendar Bot]: Revise period from {start_date} to {end_date}', new_contents_bytes, file_contents.sha,
+                                     branch='master')
+                    await ctx.send('Successfully revised the period!')
+            elif final_choice == 1:
+                await ctx.send("Okay, I won't revise it. Bye!")
+        elif choice == 1:
+            await ctx.send("Okay, I won't revise it. Bye!")
+    else:
+        await ctx.send("No period found. Do you want to add a new period? (yes/no)")
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            new_div = await add_period(ctx, start_date, end_date)
+
+            await ctx.send(f"Okay, I will add the following period:\n\n{new_div}\n Do you want to proceed? (yes/no)")
+            final_choice = await wait_for_options(ctx, ['yes', 'no'])
+            if final_choice == 0:
+                if new_div is not None:
+                    # find the correct position to insert the new period
+                    # (the periods' start dates) are in time order)
+                    inserted = False
+                    all_periods = soup.find_all('div', attrs={'start': True})
+                    for i in range(len(all_periods)):
+                        if datetime.strptime(all_periods[i]['start'], '%m/%d/%Y') > datetime.strptime(start_date, '%m/%d/%Y'):
+                            all_periods[i].insert_before(BeautifulSoup(new_div, 'html.parser'))
+                            inserted = True
+                            break
+                    if not inserted:
+                        all_periods[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
+
+                    new_contents = soup.prettify()
+
+                    # update the file
+                    new_contents_bytes = new_contents.encode('utf-8')
+                    repo.update_file('events.html', f'[Calendar Bot]: Add period from {start_date} to {end_date}', new_contents_bytes, file_contents.sha,
+                                        branch='master')
+                    await ctx.send('Successfully added the period!')
+            elif final_choice == 1:
+                await ctx.send("Okay, I won't add it. Bye!")
+        elif choice == 1:
+            await ctx.send("Okay, I won't add it. Bye!")
+
+@client.command()
+async def delete_period(ctx):
+    await ctx.send("Please enter the start date of the period (format: mm/dd/yyyy):")
+    response = await wait_for_date(ctx)
+    start_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    await ctx.send("Please enter the end date of the period (format: mm/dd/yyyy):")
+    response = await wait_for_date(ctx)
+    end_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    while end_date < start_date:
+        await ctx.send("The end date must be after the start date. Please enter 1 to re-enter the start date, or 2 to re-enter the end date:")
+        response = await wait_for_options(ctx, ['1', '2'])
+
+        if response == 0:
+            await ctx.send("Please enter the start date of the period (format: mm/dd/yyyy):")
+            response = await wait_for_date(ctx)
+            start_date = datetime.strptime(response.content, '%m/%d/%Y')
+        elif response == 1:
+            await ctx.send("Please enter the end date of the period (format: mm/dd/yyyy):")
+            response = await wait_for_date(ctx)
+            end_date = datetime.strptime(response.content, '%m/%d/%Y')
+
+    start_date = start_date.strftime('%m/%d/%Y')
+    end_date = end_date.strftime('%m/%d/%Y')
+    # verify if it is an existing period
+    file_contents = repo.get_contents('events.html')
+    soup = BeautifulSoup(file_contents.decoded_content.decode('utf-8'), 'html.parser')
+    divs = soup.find_all('div', attrs={'start': start_date, 'end': end_date})
+
+    if len(divs) != 0:
+        # len(divs) should be exactly 1 in our case, because we never allow two same periods
+        await ctx.send(f"The following period was found:\n\n{divs[0]}\n Do you want to delete this period? (yes/no)")
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            divs[0].decompose()
+            new_contents = soup.prettify()
+
+            # update the file
+            new_contents_bytes = new_contents.encode('utf-8')
+            repo.update_file('events.html', f'[Calendar Bot]: Delete period from {start_date} to {end_date}', new_contents_bytes, file_contents.sha,
+                                branch='master')
+            await ctx.send('Successfully deleted the period!')
+        elif choice == 1:
+            await ctx.send("Okay, I won't delete it. Bye!")
+    else:
+        await ctx.send("No period found. Bye!")
+
 if __name__ == '__main__':
     client.run(os.getenv('DISCORD_TOKEN'))
