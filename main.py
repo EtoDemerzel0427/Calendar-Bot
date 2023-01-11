@@ -1,4 +1,5 @@
 # A simple discord bot that can be used to update my website: https://huangweiran.club/LifeCalendar/
+# It can be used to add/revise/delete life events/periods.
 
 import os
 import discord
@@ -9,6 +10,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 import logging
 import pytz
+import re
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,7 +35,63 @@ intents.messages = True
 intents.reactions = True
 client = commands.Bot(command_prefix='!', intents=intents)
 
+###### utils: get verified values  ######
+async def wait_for_date(ctx):
+    while True:
+        response = await client.wait_for('message')
+        try:
+            datetime.strptime(response.content, '%m/%d/%Y')
+            break
+        except ValueError:
+            await ctx.send('Please enter a valid date in the format mm/dd/yyyy.')
 
+    return response
+
+async def wait_for_color(ctx):
+    regex = re.compile(r"^#(?:[0-9a-fA-F]{3}){1,2}$")
+    while True:
+        response = await client.wait_for('message')
+        if regex.match(response.content):
+            break
+        await ctx.send('Please enter a valid color in the format #xxxxxx.')
+
+    return response
+
+async def wait_for_integer(ctx, range = None):
+    while True:
+        response = await client.wait_for('message')
+        try:
+            value = int(response.content)
+            if range is not None:
+                if value < range[0] or value > range[1]:
+                    raise ValueError
+            break
+        except ValueError:
+            if range is None:
+                await ctx.send('Please enter a valid integer.')
+            else:
+                await ctx.send(f'Please enter a valid integer between {range[0]} and {range[1]}.')
+
+    return value
+
+async def wait_for_options(ctx, options=None):
+    if options is None:
+        options = ['yes', 'no']
+
+    # find in the list of options, return index if found, ask for re-enter if not found
+    while True:
+        try:
+            response = await client.wait_for('message')
+            index = options.index(response.content.lower())
+            return index
+        except ValueError:
+            await ctx.send(f'Please enter one of the following options: {", ".join(options)}.')
+
+
+
+
+# event format:
+# <div date="mm/dd/yyyy" credit="xx">event A <br> event B <br> event C</div>
 async def add_event(ctx, event_date):
     events = []
     response = await client.wait_for('message')  # the first event
@@ -50,37 +108,25 @@ async def add_event(ctx, event_date):
         events.append(response.content)
 
     await ctx.send('On a scale from 0 to 100, how would you rate your day?')
-    rating = await client.wait_for('message')
-
-    # reject the rating if it's not a integer between 0 and 100 and ask for a new one
-    while True:
-        try:
-            value = int(rating.content)
-            if value < 0 or value > 100:
-                raise ValueError
-            break
-        except ValueError:
-            await ctx.send('Please enter a number between 0 and 100.')
-            rating = await client.wait_for('message')
+    rating = await wait_for_integer(ctx, range=[0, 100])
 
     # this outer while loop is to ensure that the user can revise their input multiple times
     while True:
         # compile the generated new div and display it to the user
         events_str = '<br> '.join(events)
-        new_div = f'<div date="{event_date}" credit="{rating.content}">{events_str}</div>'
+        new_div = f'<div date="{event_date}" credit="{rating}">{events_str}</div>'
 
         await ctx.send("Here is the new event you added:\n\n" + new_div)
         await ctx.send("Do you want to add this event to the calendar? (yes/no/revise)")
-        response = await client.wait_for('message')
 
-        if response.content.lower() == 'yes':
+        choice = await wait_for_options(ctx, ['yes', 'no', 'revise'])
+
+        if choice == 0:  # add the event
             return new_div
-
-        if response.content.lower() == 'no':
+        elif choice == 1:  # discard the event
             await ctx.send("Okay, I won't add it. Bye!")
             return None
-
-        if response.content.lower() == 'revise':
+        else:  # revise the event
             while True:
                 await ctx.send('Which event do you want to revise (enter the number)? (or type "done" to finish)')
                 response = await client.wait_for('message')
@@ -130,16 +176,7 @@ async def new_event(ctx):
 @client.command()
 async def revise_event(ctx):
     await ctx.send("Please enter the date of the event to be revised (format: mm/dd/yyyy):")
-    response = await client.wait_for('message')
-
-    # reject the date if it's not in the correct format
-    while True:
-        try:
-            datetime.strptime(response.content, '%m/%d/%Y')
-            break
-        except ValueError:
-            await ctx.send('Please enter a valid date in the format mm/dd/yyyy.')
-            response = await client.wait_for('message')
+    response = await wait_for_date(ctx)
 
     date = datetime.strptime(response.content, '%m/%d/%Y').strftime('%m/%d/%Y')
 
@@ -162,79 +199,57 @@ async def revise_event(ctx):
 
     if len(div) == 0:
         await ctx.send("No events found for that date. Do you want to add a new event for that date? (yes/no)")
-        response = await client.wait_for('message')
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            await ctx.send('Sure. So what events do you want to add?')
+            new_div = await add_event(ctx, date)
+            if new_div is not None:
+                # find the correct place to insert the new div
+                inserted = False
+                all_divs = soup.find_all('div', attrs={'date': True, 'credit': True})
+                for div in all_divs:
+                    if datetime.strptime(div['date'], '%m/%d/%Y') > datetime.strptime(date, '%m/%d/%Y'):
+                        div.insert_before(BeautifulSoup(new_div, 'html.parser'))
+                        inserted = True
+                        logging.info(f"inserted new div for {date}")
+                        break
+                if not inserted:
+                    all_divs[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
+                    logging.info(f"Latest: inserted new div for {date}")
+            new_contents = soup.prettify()
 
-        while True:
-            if response.content.lower() == 'yes':
-                await ctx.send('Sure. So what events do you want to add?')
-                new_div = await add_event(ctx, date)
-                if new_div is not None:
-                    # find the correct place to insert the new div
-                    inserted = False
-                    all_divs = soup.find_all('div', attrs={'date': True, 'credit': True})
-                    for div in all_divs:
-                        if datetime.strptime(div['date'], '%m/%d/%Y') > datetime.strptime(date, '%m/%d/%Y'):
-                            div.insert_before(BeautifulSoup(new_div, 'html.parser'))
-                            inserted = True
-                            logging.info(f"inserted new div for {date}")
-                            break
-                    if not inserted:
-                        all_divs[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
-                        logging.info(f"Latest: inserted new div for {date}")
+            # update the file
+            new_contents_bytes = new_contents.encode('utf-8')
+            repo.update_file('events.html', f'[Calendar Bot]: Revise events for {date}', new_contents_bytes, file_contents.sha,
+                             branch='master')
+            await ctx.send('Successfully added events for the date!')
+            return
+        elif choice == 1:
+            await ctx.send("Okay, I won't add it. Bye!")
+            return
+    else:
+        await ctx.send(f"The following events were found for {date}:\n\n{div[0]}")
+        await ctx.send("Do you want to revise this event? (yes/no)")
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            await ctx.send("Okay, what do you want to change it to?")
+            new_div = await add_event(ctx, date)
+            if new_div is not None:
+                div[0].replace_with(BeautifulSoup(new_div, 'html.parser'))
                 new_contents = soup.prettify()
 
                 # update the file
                 new_contents_bytes = new_contents.encode('utf-8')
                 repo.update_file('events.html', f'[Calendar Bot]: Revise events for {date}', new_contents_bytes, file_contents.sha,
                                  branch='master')
-                await ctx.send('Successfully added events for the date!')
-                return
-            elif response.content.lower() == 'no':
-                await ctx.send("Okay, I won't add it. Bye!")
-                return
-            else:
-                await ctx.send("Please enter yes or no.")
-                response = await client.wait_for('message')
-
-    else:
-        await ctx.send(f"The following events were found for {date}:\n\n{div[0]}")
-        await ctx.send("Do you want to revise this event? (yes/no)")
-        response = await client.wait_for('message')
-
-        while True:
-            if response.content.lower() == 'yes':
-                await ctx.send("Okay, what do you want to change it to?")
-                new_div = await add_event(ctx, date)
-                if new_div is not None:
-                    div[0].replace_with(BeautifulSoup(new_div, 'html.parser'))
-                    new_contents = soup.prettify()
-
-                    # update the file
-                    new_contents_bytes = new_contents.encode('utf-8')
-                    repo.update_file('events.html', f'[Calendar Bot]: Revise events for {date}', new_contents_bytes, file_contents.sha,
-                                     branch='master')
-                    await ctx.send('Successfully revised events for the date!')
-                return
-            elif response.content.lower() == 'no':
-                await ctx.send("Okay, I won't revise it. Bye!")
-                return
-            else:
-                await ctx.send("Please enter yes or no.")
-                response = await client.wait_for('message')
+                await ctx.send('Successfully revised events for the date!')
+        elif choice == 1:
+            await ctx.send("Okay, I won't revise it. Bye!")
 
 @client.command()
 async def delete_event(ctx):
     await ctx.send("Please enter the date of the event to be deleted (format: mm/dd/yyyy):")
-    response = await client.wait_for('message')
-
-    # reject the date if it's not in the correct format
-    while True:
-        try:
-            datetime.strptime(response.content, '%m/%d/%Y')
-            break
-        except ValueError:
-            await ctx.send('Please enter a valid date in the format mm/dd/yyyy.')
-            response = await client.wait_for('message')
+    response = await wait_for_date(ctx)
 
     date = datetime.strptime(response.content, '%m/%d/%Y').strftime('%m/%d/%Y')
 
@@ -251,28 +266,18 @@ async def delete_event(ctx):
     else:
         await ctx.send(f"The following events were found for {date}:\n\n{div[0]}")
         await ctx.send("Do you want to delete this event? (yes/no)")
-        response = await client.wait_for('message')
+        choice = await wait_for_options(ctx, ['yes', 'no'])
+        if choice == 0:
+            div[0].decompose()
+            new_contents = soup.prettify()
 
-        while True:
-            if response.content.lower() == 'yes':
-                div[0].decompose()
-                new_contents = soup.prettify()
-
-                print(new_contents)
-
-                # update the file
-                new_contents_bytes = new_contents.encode('utf-8')
-                repo.update_file('events.html', f'[Calendar Bot]: Delete events for {date}', new_contents_bytes, file_contents.sha,
-                                 branch='master')
-                await ctx.send('Successfully deleted events for the date!')
-                return
-            elif response.content.lower() == 'no':
-                await ctx.send("Okay, I won't delete it. Bye!")
-                return
-            else:
-                await ctx.send("Please enter yes or no.")
-                response = await client.wait_for('message')
-
+            # update the file
+            new_contents_bytes = new_contents.encode('utf-8')
+            repo.update_file('events.html', f'[Calendar Bot]: Delete events for {date}', new_contents_bytes, file_contents.sha,
+                             branch='master')
+            await ctx.send('Successfully deleted events for the date!')
+        elif choice == 1:
+            await ctx.send("Okay, I won't delete it. Bye!")
 
 if __name__ == '__main__':
     client.run(os.getenv('DISCORD_TOKEN'))
