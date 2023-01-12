@@ -26,6 +26,8 @@ DISCORD_TOKEN=<Your-discord-bot-token>
 !new_event
 !revise_event
 !delete_event
+!revise_event 
+!delete_period 
 ```
 
 An example of the `!revise_event` command is shown below:
