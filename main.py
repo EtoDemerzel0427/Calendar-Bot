@@ -160,11 +160,11 @@ async def new_event(ctx):
 
     if new_div is not None:
         file_contents = repo.get_contents('events.html')
-        text = file_contents.decoded_content.decode('utf-8')
+        soup = BeautifulSoup(file_contents.decoded_content.decode('utf-8'), 'html.parser')
 
-        # remove the last closing div tag
-        new_contents = text.rstrip('</div>')
-        new_contents += new_div + '</div>'
+        # insert before the last </div>
+        soup.find_all('div')[-1].insert_after(BeautifulSoup(new_div, 'html.parser'))
+        new_contents = soup.prettify()
 
         # update the file
         new_contents_bytes = new_contents.encode('utf-8')
@@ -440,6 +440,14 @@ async def delete_period(ctx):
             await ctx.send("Okay, I won't delete it. Bye!")
     else:
         await ctx.send("No period found. Bye!")
+
+# handle the command to add an event
+@client.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("Command not found. Please use !help to see the list of commands.")
+    else:
+        raise error
 
 if __name__ == '__main__':
     client.run(os.getenv('DISCORD_TOKEN'))
