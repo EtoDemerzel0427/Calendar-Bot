@@ -456,5 +456,5 @@ if __name__ == '__main__':
     except discord.errors.HTTPException as e:
         # restart the bot if the bot is disconnected
         logging.info(f"Blocked by HTTP error: {e}")
-        system("python restarter.py")
+        system("python restart.py")
         system('kill 1')
