@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 import logging
 import pytz
 import re
+from os import system
 
 logging.basicConfig(level=logging.INFO)
 
@@ -386,7 +387,7 @@ async def new_period(ctx):
                     # update the file
                     new_contents_bytes = new_contents.encode('utf-8')
                     repo.update_file('events.html', f'[Calendar Bot]: Add period from {start_date} to {end_date}', new_contents_bytes, file_contents.sha,
-                                        branch='master')
+                                     branch='master')
                     await ctx.send('Successfully added the period!')
             elif final_choice == 1:
                 await ctx.send("Okay, I won't add it. Bye!")
@@ -434,7 +435,7 @@ async def delete_period(ctx):
             # update the file
             new_contents_bytes = new_contents.encode('utf-8')
             repo.update_file('events.html', f'[Calendar Bot]: Delete period from {start_date} to {end_date}', new_contents_bytes, file_contents.sha,
-                                branch='master')
+                             branch='master')
             await ctx.send('Successfully deleted the period!')
         elif choice == 1:
             await ctx.send("Okay, I won't delete it. Bye!")
@@ -450,4 +451,10 @@ async def on_command_error(ctx, error):
         raise error
 
 if __name__ == '__main__':
-    client.run(os.getenv('DISCORD_TOKEN'))
+    try:
+        client.run(os.getenv('DISCORD_TOKEN'))
+    except discord.errors.HTTPException as e:
+        # restart the bot if the bot is disconnected
+        logging.info(f"Blocked by HTTP error: {e}")
+        system("python restarter.py")
+        system('kill 1')
